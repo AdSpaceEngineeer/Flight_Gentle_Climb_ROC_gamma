@@ -1,0 +1,79 @@
+# This code computes the flight path angle, rate of climb and time to climb for a gentle climbing flight
+
+#import packages
+import math as m
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+
+# Assumptions: Gentle climb, constant weight
+# flight path angle 'gamma' = (T - D) / W
+# L = W for quasi-steady gentle climb
+# get T = T_available from engine specifications
+# W is given (assumed constant)
+# D = CD * q_bar * S ; where S is given
+# CD = CD0 + k * CL**2 ; where k, CD0 are given
+# CL = L / (q_bar * S) ; where q_bar = 0.5 * rho_slug * V_true^2
+# Rate of Climb for gentle climb is ROC = V * gamma
+
+#custom function to get P, T, rho given h in Earth standard dry air atmosphere model
+g0 = 32.174         # feet per square seconds, std grav acceleration
+R = 1716.5          # feet square per second square per deg Rankine, specific gas constant of air
+F_to_R = 459.67     # to convert deg Fahrenheit to deg Rankine, R = F + 459.67
+a = -0.00357        # deg Rankine per feet, environmental lapse rate
+P_sl = 2116.22      # pounds per square feet, pressure at sea level
+rho_sl = 2.3769e-3  # slugs per cubic feet, density at sea level
+T_sl = 59           # deg Fahrenheit, Temperature at sea level
+T_trop = -69.7      # deg Fahrenheit, Temperature at 36000 feet
+P_trop = 474.59       # pounds per square feet, pressure at 36000 feet
+rho_trop = 7.0864e-4  # slugs per cubic feet, density at 36000 feet
+
+def get_PTrho_given_altitude(h,g0,R,P_sl,rho_sl,F_to_R,a,T_sl,T_trop,P_trop,rho_trop):
+    if h < 36000 :
+        T1 = T_sl + F_to_R                     # deg Rankine, Temperature at sea level
+        T = T1 + a*h                         # deg Rankine, Temperature at h
+        P = P_sl * ( T / T1 )**(-1*g0/(R*a))              # pounds per square feet, Pressure at h
+        rho = rho_sl * ( T / T1 )**(-1*(g0/(R*a) + 1))    # slug per cubic fe   et, Density at h
+    
+    elif h >= 36000 and h < 82000 :          # isotherml region of stratosphere
+        h0 = 36000                           # feet, altitude at tropopause
+        T = T_trop + F_to_R                   # deg Rankine, Temperature at 36000 feet
+        P = P_trop * m.e**(-1*g0*(h - h0)/(R*T))        # pounds per square feet, Pressure at h
+        rho = rho_trop * m.e**(-1*g0*(h - h0)/(R*T))    # slug per feet cube, Density at h
+    
+    return [P, T - F_to_R, rho]     #return Pressure in lb/ft2, Temperature in degF and Density in slugs/ft3
+
+# gentle climb specifications:
+V_true = 400    # ft/s, true airspeed
+h0 = 0          # ft, sea level height
+W = 150000      #lbf, weight of aircraft
+engine_num = 2  # no of engines thrusting
+CD0 = 0.0179    # parasite drag coefficient
+k = 0.0427      # 1/(e0*pi*AR) constant
+S = 1341        # ft.s-2, planform area of aircraft
+h2_list = [0, 10000, 20000, 30000]      # ft, heights at which to compute flight path angle
+Ta_list = engine_num*np.array([17233, 14721, 11830, 8668])  #lbf, Thrust available with 2 engines
+
+for i in range(len(h2_list)):
+    print("At altitude / ft :", h2_list[i])
+    rho_slug = get_PTrho_given_altitude(h2_list[i],g0,R,P_sl,rho_sl,F_to_R,a,T_sl,T_trop,P_trop,rho_trop)[2]
+    q_bar = 0.5 * rho_slug * V_true**2 ; print("P_dyn / lbf.ft-2:", q_bar)
+    L = W
+    CL = L / (q_bar * S) ; print("Lift Coeff :", CL)
+    CD = CD0 + k * CL**2 ; print("Drag Coeff :", CD)
+    D = CD * q_bar * S ; print("Drag / lbf :", D)
+    gamma = (Ta_list[i] - D) / W ; print("Flight Path Angle / radians :", gamma)
+    ROC = V_true * gamma ; print("Rate of Climb / ft.s-1 :", ROC, "\n")
+    
+# Using rate of climb in idealised form
+  # ROC = ROC_sea_level * (1 - h / h_abs)
+  # delta_time = ( (h2 - h1) / (ROC_2 - ROC_1) ) * ln (ROC_2 / ROC_1)
+
+h_abs = 47500   # estimated from flight performance envelope plot
+h2 = 30000      # feet, altitude after delta_time
+h1 = 0          # feet, altitude before delta_time
+ROC1 = 69.690   # ft/s, rate of climb at 'h1'
+ROC2 = ROC1 * (1 - h2 / h_abs)
+print("Rate of Climb at 30K feet / ft.s-1 :", ROC2)
+delta_time = ( (h2 - h1) / (ROC2 - ROC1) ) * m.log(ROC2 / ROC1)
+print("Length of time to gently climb from 0 to 30K feet :",delta_time," seconds, or ", delta_time/60," minutes.")
